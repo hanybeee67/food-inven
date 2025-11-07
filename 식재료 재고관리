@@ -1,0 +1,241 @@
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+
+st.set_page_config(page_title="Everest Management", layout="wide")
+
+# 초기 세션 상태 설정
+if "inventory" not in st.session_state:
+    st.session_state.inventory = pd.DataFrame(columns=["지점", "품목명", "카테고리", "단위", "현재수량", "최소수량", "비고"])
+if "staff" not in st.session_state:
+    st.session_state.staff = pd.DataFrame(columns=["지점", "이름", "직책", "역할", "근무형태", "연락처", "비고"])
+if "customers" not in st.session_state:
+    st.session_state.customers = pd.DataFrame(columns=["이름", "연락처", "방문지점", "최근방문일", "메모"])
+
+
+st.title("EVEREST 통합 관리 시스템 (베타)")
+
+menu = st.sidebar.radio(
+    "메뉴 선택",
+    ("📦 재고관리", "👥 인력관리", "💳 고객관리", "📊 대시보드(요약)")
+)
+
+branches = ["동대문", "굿모닝시티", "양재", "수원영통", "동탄", "영등포", "룸비니"]
+
+
+# 📦 재고관리
+if menu == "📦 재고관리":
+    st.subheader("재고 입력")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        branch = st.selectbox("지점", branches, key="inv_branch")
+        name = st.text_input("품목명", key="inv_name")
+        category = st.selectbox("카테고리", ["육류", "야채", "향신료", "소스", "음료", "기타"], key="inv_cat")
+    with col2:
+        unit = st.text_input("단위 (예: kg, 개, 박스)", key="inv_unit")
+        qty = st.number_input("현재 수량", min_value=0.0, step=1.0, key="inv_qty")
+        min_qty = st.number_input("최소 필요 수량", min_value=0.0, step=1.0, key="inv_min")
+    with col3:
+        note = st.text_input("비고", key="inv_note")
+        add_btn = st.button("재고 등록 / 업데이트")
+
+    if add_btn:
+        if name.strip() == "":
+            st.warning("품목명을 입력하세요.")
+        else:
+            df = st.session_state.inventory
+
+            # 같은 지점+품목 있으면 업데이트, 없으면 추가
+            mask = (df["지점"] == branch) & (df["품목명"] == name)
+            new_row = {
+                "지점": branch,
+                "품목명": name,
+                "카테고리": category,
+                "단위": unit,
+                "현재수량": qty,
+                "최소수량": min_qty,
+                "비고": note,
+            }
+
+            if mask.any():
+                st.session_state.inventory.loc[mask, :] = list(new_row.values())
+                st.success("기존 품목 정보가 업데이트되었습니다.")
+            else:
+                st.session_state.inventory = pd.concat(
+                    [df, pd.DataFrame([new_row])],
+                    ignore_index=True
+                )
+                st.success("새 재고 품목이 등록되었습니다.")
+
+    st.markdown("---")
+    st.subheader("재고 현황")
+
+    # 필터
+    f_col1, f_col2 = st.columns(2)
+    with f_col1:
+        f_branch = st.multiselect("지점 필터", branches, default=branches)
+    with f_col2:
+        show_only_low = st.checkbox("최소수량 이하만 보기 (발주 필요)")
+
+    inv_view = st.session_state.inventory.copy()
+    inv_view = inv_view[inv_view["지점"].isin(f_branch)]
+
+    if show_only_low:
+        inv_view = inv_view[inv_view["현재수량"] <= inv_view["최소수량"]]
+
+    st.dataframe(inv_view, use_container_width=True)
+
+# 👥 인력관리
+elif menu == "👥 인력관리":
+    st.subheader("직원 정보 등록")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        s_branch = st.selectbox("지점", branches, key="st_branch")
+        s_name = st.text_input("이름", key="st_name")
+        s_role = st.selectbox("역할", ["홀", "주방-커리", "주방-난", "주방-둘다", "바", "매니저", "기타"], key="st_role")
+    with c2:
+        s_position = st.text_input("직책 (예: 매니저, 스탭)", key="st_pos")
+        s_type = st.selectbox("근무형태", ["정규", "파트", "알바"], key="st_type")
+    with c3:
+        s_phone = st.text_input("연락처", key="st_phone")
+        s_note = st.text_input("비고", key="st_note")
+        s_add = st.button("직원 등록 / 업데이트")
+
+    if s_add:
+        if s_name.strip() == "":
+            st.warning("직원 이름을 입력하세요.")
+        else:
+            df = st.session_state.staff
+            mask = (df["지점"] == s_branch) & (df["이름"] == s_name)
+
+            new_row = {
+                "지점": s_branch,
+                "이름": s_name,
+                "직책": s_position,
+                "역할": s_role,
+                "근무형태": s_type,
+                "연락처": s_phone,
+                "비고": s_note,
+            }
+
+            if mask.any():
+                st.session_state.staff.loc[mask, :] = list(new_row.values())
+                st.success("기존 직원 정보가 업데이트되었습니다.")
+            else:
+                st.session_state.staff = pd.concat(
+                    [df, pd.DataFrame([new_row])],
+                    ignore_index=True
+                )
+                st.success("새 직원이 등록되었습니다.")
+
+    st.markdown("---")
+    st.subheader("직원 목록 / 필터")
+
+    sc1, sc2 = st.columns(2)
+    with sc1:
+        f_branch = st.multiselect("지점 필터", branches, default=branches, key="st_f_branch")
+    with sc2:
+        f_role = st.multiselect("역할 필터", ["홀", "주방-커리", "주방-난", "주방-둘다", "바", "매니저", "기타"], key="st_f_role")
+
+    staff_view = st.session_state.staff.copy()
+    if f_branch:
+        staff_view = staff_view[staff_view["지점"].isin(f_branch)]
+    if f_role:
+        staff_view = staff_view[staff_view["역할"].isin(f_role)]
+
+    st.dataframe(staff_view, use_container_width=True)
+
+# 💳 고객관리
+elif menu == "💳 고객관리":
+    st.subheader("고객 정보 등록")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        c_name = st.text_input("고객 이름", key="c_name")
+        c_phone = st.text_input("연락처", key="c_phone")
+    with c2:
+        c_branch = st.selectbox("주로 방문 지점", branches, key="c_branch")
+        c_date = st.date_input("최근 방문일", value=datetime.today(), key="c_date")
+    with c3:
+        c_memo = st.text_input("메모 (단골 특징, 선호메뉴 등)", key="c_memo")
+        c_add = st.button("고객 등록 / 업데이트")
+
+    if c_add:
+        if c_phone.strip() == "":
+            st.warning("연락처(또는 고유값)를 입력하세요.")
+        else:
+            df = st.session_state.customers
+            mask = (df["연락처"] == c_phone)
+
+            new_row = {
+                "이름": c_name,
+                "연락처": c_phone,
+                "방문지점": c_branch,
+                "최근방문일": c_date.strftime("%Y-%m-%d"),
+                "메모": c_memo,
+            }
+
+            if mask.any():
+                st.session_state.customers.loc[mask, :] = list(new_row.values())
+                st.success("기존 고객 정보가 업데이트되었습니다.")
+            else:
+                st.session_state.customers = pd.concat(
+                    [df, pd.DataFrame([new_row])],
+                    ignore_index=True
+                )
+                st.success("새 고객이 등록되었습니다.")
+
+    st.markdown("---")
+    st.subheader("고객 목록")
+
+    cc1, cc2 = st.columns(2)
+    with cc1:
+        f_branch = st.multiselect("지점 필터", branches, default=branches, key="c_f_branch")
+    with cc2:
+        keyword = st.text_input("이름/메모 검색", key="c_keyword")
+
+    cust_view = st.session_state.customers.copy()
+    if f_branch:
+        cust_view = cust_view[cust_view["방문지점"].isin(f_branch)]
+    if keyword:
+        kw = keyword.strip()
+        cust_view = cust_view[
+            cust_view["이름"].str.contains(kw, na=False)
+            | cust_view["메모"].str.contains(kw, na=False)
+        ]
+
+    st.dataframe(cust_view, use_container_width=True)
+
+# 📊 대시보드
+elif menu == "📊 대시보드(요약)":
+    st.subheader("간단 현황 요약")
+
+    inv = st.session_state.inventory
+    staff = st.session_state.staff
+    cust = st.session_state.customers
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("등록된 재고 품목 수", len(inv))
+    with c2:
+        st.metric("등록된 직원 수", len(staff))
+    with c3:
+        st.metric("등록된 고객 수", len(cust))
+
+    st.markdown("### 지점별 직원 수")
+    if len(staff) > 0:
+        st.dataframe(staff.groupby("지점")["이름"].count().rename("직원수").reset_index(), use_container_width=True)
+    else:
+        st.write("직원 데이터가 없습니다.")
+
+    st.markdown("### 발주 필요 품목 (현재수량 ≤ 최소수량)")
+    if len(inv) > 0:
+        need = inv[inv["현재수량"] <= inv["최소수량"]]
+        if len(need) > 0:
+            st.dataframe(need, use_container_width=True)
+        else:
+            st.write("발주 필요 품목이 없습니다.")
+    else:
+        st.write("재고 데이터가 없습니다.")
